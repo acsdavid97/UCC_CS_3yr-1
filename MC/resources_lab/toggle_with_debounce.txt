@@ -1,0 +1,29 @@
+#define SWITCH 8
+#define LED 13
+#define DEBOUNCE_TIME 5
+
+boolean prevBState = LOW;
+boolean bState = LOW;
+boolean ledOn = false;
+
+boolean debounceRead(byte input){
+   if(digitalRead(input)){
+      delay(DEBOUNCE_TIME);
+      return digitalRead(input);
+   }
+   return LOW;
+}
+
+void setup(){
+  pinMode(SWITCH, INPUT);
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);
+}
+
+void loop(){
+   bState = debounceRead(SWITCH);
+   if (bState && !prevBState){
+      digitalWrite(LED, (ledOn = !ledOn));
+   }
+   prevBState = bState;
+}
