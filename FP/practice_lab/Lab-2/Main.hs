@@ -1,37 +1,45 @@
- 1   {-
-   1  - Name: Acs David.
-   2  - Number: 117106523.
-   3  - Assignment: 02.
-   4  -}
-   5 
-   6 paint_wall :: [[a]] -> [a] -> [a] -> [a] -> [a] -> [[a]] -> [[a]]
-   7 -- we ran out of colours
-   8 paint_wall painted_walls painted_wall [] original_colours wall walls =
-   9     paint_wall painted_walls painted_wall original_colours original_colours wall walls
+20 {-
+  19  - Name: Acs David.
+  18  - Number: 117106523.
+  17  - Assignment: 02.
+  16  -}
+  15 
+  14 paint_wall :: [a] -> [a] -> [a] -> [a] -> [[a]] -> [[a]]
+  13 -- we ran out of colours
+  12 paint_wall painted_wall [] original_colours wall walls =
+  11     paint_wall painted_wall original_colours original_colours wall walls
   10 -- at the end of the wall
-  11 paint_wall painted_walls painted_wall colours original_colours [] walls =
-  12     paint_walls_recursively (painted_wall:painted_walls) colours original_colours walls
-  13 -- just a single brick
-  14 paint_wall painted_walls painted_wall colours original_colours [brick] walls =
-  15     paint_wall painted_walls (brick:painted_wall) colours original_colours [] walls
-  16 -- append colour to the beginning of the wall
-  17 paint_wall painted_walls painted_wall (colour:colours) original_colours (brick:bricks) walls =
-  18     paint_wall painted_walls (colour:painted_wall) colours original_colours bricks walls
-  19 
-  20 paint_walls_recursively :: [[a]] -> [a] -> [a] -> [[a]] -> [[a]] 
-  21 paint_walls_recursively painted_walls _ _ [] = painted_walls
-  22 paint_walls_recursively painted_walls colours original_colours ((brick:bricks):walls) =
-  23     paint_wall painted_walls [brick] colours original_colours bricks walls
-  24 
-  25 paint_interior_bricks :: [a] -> [[a]] -> [[a]]
-  26 paint_interior_bricks colours walls = paint_walls_recursively [] colours colours walls 
-  27 
-  28 test1 :: IO ()
-  29 test1 = putStrLn (show (paint_interior_bricks colours walls))
-  30     where colours = [0, 1, 2]
-  31           walls = [[3,3,3,3,3,3]]
-  32 
-  33 main :: IO ()
-  34 main = putStrLn (show (paint_interior_bricks colours walls))
-  35     where colours = [0, 1, 2]
-  36           walls = [[3],[3,3],[3,3,3],[3,3,3],[3,3,3,3,3],[3,3,3,3,3,3]]
+   9 paint_wall painted_wall colours original_colours [] walls =
+   8     paint_walls_recursively painted_wall colours original_colours walls
+   7 -- just a single brick
+   6 paint_wall painted_wall colours original_colours [brick] walls =
+   5     paint_wall (brick:painted_wall) colours original_colours [] walls
+   4 -- append colour to the beginning of the wall
+   3 paint_wall painted_wall (colour:colours) original_colours (brick:bricks) walls =
+   2     paint_wall (colour:painted_wall) colours original_colours bricks walls 
+   1 
+ 21  paint_walls_recursively :: [a] -> [a] -> [a] -> [[a]] -> [[a]] 
+   1 paint_walls_recursively painted_wall _ _ [] = [painted_wall]
+   2 paint_walls_recursively painted_wall colours original_colours ((brick:bricks):walls) =
+   3     painted_wall : paint_wall [brick] colours original_colours bricks walls
+   4 
+   5 paint_interior_bricks :: [a] -> [[a]] -> [[a]]
+   6 paint_interior_bricks colours walls = paint_walls_recursively [] colours colours walls
+   7 
+   8 test1 :: IO ()
+   9 test1 = putStrLn (show (paint_interior_bricks colours walls))
+  10     where colours = [0, 1, 2]
+  11           walls = [[1, 2, 3 ,4 ,5 ,6 ,7 ,8, 9,0]]
+  12           
+  13 main :: IO ()
+  14 main = putStrLn (show (paint_interior_bricks colours walls))
+  15     where colours = [0, 1, 2]
+  16           walls = [[3],[3,3],[3,3,3],[3,3,3],[3,3,3,3,3],[3,3,3,3,3,3]]
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                                                                                                                  
+ ~                     
