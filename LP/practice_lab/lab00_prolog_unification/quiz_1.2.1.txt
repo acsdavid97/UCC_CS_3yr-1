@@ -1,0 +1,10 @@
+a. X -- variable
+b. 'X' -- atom
+c. _138 -- variable
+d. hello -- atom
+e. Hello -- variable
+f. 'Hello' -- atom
+g. [a, b, c] -- list of atoms (a list is a compund term)
+h. [A, B, C] -- list of variables
+i. [Ana, are, 'mere'] -- list of simple objects
+
