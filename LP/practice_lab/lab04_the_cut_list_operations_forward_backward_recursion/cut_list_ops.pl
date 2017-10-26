@@ -103,6 +103,8 @@ get_at_k([_|T], K, R) :-
     K1 is K-1,
     get_at_k(T, K1, R).
 
+% randomly select k elements of the list
+% (suppose that k is smaller than length l)
 rnd_select(L, 0, []).
 rnd_select(L, K, [S|R]) :-
     length(L, Len),
@@ -112,9 +114,4 @@ rnd_select(L, K, [S|R]) :-
     delete(S, L, L1),
     K1 is K-1,
     rnd_select(L1, K1, R).
-
-
-
-
-
 

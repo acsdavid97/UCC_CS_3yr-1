@@ -19,6 +19,7 @@ for(In, Out, I):-
 
 lcm(X, Y, Z) :- gcd(X, Y, G), Z is X*Y/G.
 
+% n-th fibonacci number using recursion
 fib(0, 1).
 fib(1, 1).
 fib(N, R) :- 

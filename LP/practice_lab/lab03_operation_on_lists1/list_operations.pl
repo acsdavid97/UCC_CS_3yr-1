@@ -43,13 +43,13 @@ separate_parity([H|T], E, [H|O]) :-
     P = 1,
     separate_parity(T, E, O).
 
-% we remove all the occurences of the head and pass the result recoursively
+% we remove all the occurrence of the head and pass the result recursively
 remove_duplicates([], []).
 remove_duplicates([H|T], [H|R]) :- 
     delete_all(H, T, R1),
     remove_duplicates(R1, R).
 
-% replace all occurences of K with NewK. 
+% replace all occurrences of K with NewK. 
 replace_all(_, _, [], []).
 replace_all(K, NewK, [K|T], [NewK|R]) :- 
     replace_all(K, NewK, T, R).
