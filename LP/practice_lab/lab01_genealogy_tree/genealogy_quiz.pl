@@ -51,6 +51,7 @@ grandmother(X, Y):- parent(X, Z), parent(Z, Y), woman(X).
 
 grandfather(X, Y):- parent(X, Z), parent(Z, Y), man(X).
 
+% recusively finds the ancestor of a person
 ancestor(X, Y):- parent(X, Y).
 ancestor(X, Y):- parent(X, Z), ancestor(Z, Y).
 

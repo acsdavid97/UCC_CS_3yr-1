@@ -33,6 +33,7 @@ sum([H|T], R) :-
     sum(T, R1),
     R is H + R1.
 
+% separate even and odd numbers in different lists
 separate_parity([], [], []).
 separate_parity([H|T], [H|E], O) :- 
     P is mod(H, 2),

@@ -124,3 +124,21 @@ partition1_char(_, [], [], []).
 
 sort_chars(L, R) :-
     quick_sort_char(L, R). 
+
+% p5-2
+% sort list by their length
+quick_sort_length([H|T], R) :- partition1_length(H, T, Sm, Lg), quick_sort_length(Sm, SmS),
+            quick_sort_length(Lg, LgS), append(SmS, [H|LgS], R).
+quick_sort_length([], []).
+
+partition1_length(H, [X|T], [X|Sm], Lg) :- 
+    length(X, XL),
+    length(H, HL),
+    XL < HL,
+    !,
+    partition1_length(H, T, Sm, Lg).
+partition1_length(H, [X|T], Sm, [X|Lg]) :- partition1_length(H, T, Sm, Lg).
+partition1_length(_, [], [], []).
+
+sort_len(L, R) :-
+    quick_sort_length(L, R). 
