@@ -48,7 +48,7 @@ instance (Incrementable a, Eq a, Ord a, Bounded a) => Incrementable [a] where
 
 -- PART 5
 
-instance Testable [TwoValued]
+instance (Incrementable a, Ord a, Bounded a) => Testable [a]
 
 main = do putStrLn $ show $ test ([One, Two, Two] ==)
           putStrLn $ show $ test ([One, Two, Two] /=)
