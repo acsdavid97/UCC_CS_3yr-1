@@ -4,7 +4,8 @@
  - Assignment: 04.
  -}
 
-module Main where
+module Main (List, pretty_print, create_from_list, 
+                insert, foldl', foldr', main) where
 
 -- polymorphic, recursive data type List, 
 -- can be and EmptyList or an element and a List. 
