@@ -54,7 +54,7 @@ main = do putStrLn $ show $ test ([One, Two, Two] ==)
           putStrLn $ show $ test ([One, Two, Two] /=)
           putStrLn $ show $ test ([One, Two, Two]  <)
           putStrLn $ show $ test ([Two, Two, Two] >=)
-          putStrLn $ show $ test (>= [One, Two, Two])
+          putStrLn $ show $ test (>= [Two, Two, Two])
     where 
         test p = [int p bs [Two, Two, Two] | bs <- bss]
         int p a a' = if check p a a' then 1 else 0
