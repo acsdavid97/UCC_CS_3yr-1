@@ -62,7 +62,11 @@ test_check2 = [False, False, True, True] ==
 instance (Incrementable a, Eq a, Ord a, Bounded a) => 
                                     Incrementable [a] where
 
---  the definition of next for lists, we will be able to increment a list
+--  the definition of next for lists: we will be able to increment a list
+--  by incrementing the least significant one first and when we cannot 
+--  increment the least significant one, we will start incrementing a
+--  more significant elements. Just like adding one to number, if we 
+--  treat the digits as distinct elements.
 --  example: next [One, One] -> [One, Two]
 --           next [One, Two] -> [Two, One]
     next = reverse . next' . reverse 
@@ -72,12 +76,18 @@ instance (Incrementable a, Eq a, Ord a, Bounded a) =>
             next' (a:as) | a == maxBound = minBound:next' as
             next' (a:as) | otherwise = next a:as
 
--- test next on TwoValued elements
+-- test next on list of TwoValued elements
+test_next1 :: Bool
+test_next1 = [Two, One] == next [One, Two]
+
+test_next2 :: Bool
+test_next2 = [One, Two] == next [One, One]
 
 -- PART 5
 
 -- if elements of a list are Incrementable, comparable, bounded
--- then we can test them using the function check
+-- then we can test them using the function check, since the list 
+-- itself is Incrementable.
 instance (Incrementable a, Ord a, Bounded a) => Testable [a]
 
 main :: IO()
@@ -90,3 +100,4 @@ main = do putStrLn $ show $ test ([One, Two, Two] ==)
            int p a a' = if check p a a' then 1 else 0
            bs = [One, Two]
            bss = [[a, b, c] | a <- bs, b <- bs, c <- bs]
+
