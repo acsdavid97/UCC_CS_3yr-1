@@ -37,11 +37,19 @@ typedef enum {
   ENTRY_EXIT, DIGITAL, ANALOG, CONTINUOUS
 } ALARM_TYPE;
 
+typedef struct {
+  ALARM_TYPE alarm_type;
+  byte pin;
+  byte value;
+  byte state;
+}ZONE;
+
 const int RECV_PIN = 9;
 const int BUZZER = 8;
-#define NR_ALARM_PINS 4
+#define NR_ZONES 4
 
-ALARM_TYPE alarm_types[NR_ALARM_PINS];
+
+ZONE zones[NR_ZONES];
 
 IRrecv irrecv(RECV_PIN);
 decode_results results;
@@ -379,7 +387,23 @@ void CBCaller(int keyInt){
   }
 }
 
-void handle_digital_zone(byte pin) {
+void handle_digital_zone(ZONE *zone) {
+//  static byte bState[4] = {LOW, LOW, LOW, LOW};
+//  static byte prevBState[4] = {LOW, LOW, LOW, LOW};
+//  bState[pin-A0] = digitalRead(pin);
+  byte currentState = digitalRead(zone->pin);
+  if (currentState && !zone->state){
+      Serial.println("pin");
+      Serial.println(zone->pin);
+      Serial.println("bState pin");
+      Serial.println(currentState);
+      digitalWrite(BUZZER, HIGH);
+      Serial.println("buzzer is high");
+      delay(1000);
+      digitalWrite(BUZZER, LOW);
+      Serial.println("buzzer is low");
+  }
+  zone->state = currentState;
   
 }
 
@@ -418,9 +442,10 @@ ALARM_TYPE byte2alarm_type(byte b) {
 }
 
 void record_settings_in_eeprom() {
+  //TODO change to zone
   byte packed_alarm_types = 0;
-  for(int i = 0; i < NR_ALARM_PINS; i++) {
-    byte at = alarm_type2byte(alarm_types[i]); 
+  for(int i = 0; i < NR_ZONES; i++) {
+    byte at = alarm_type2byte(zones[i].alarm_type); 
     packed_alarm_types |= at << (2 * i);
   }
   EEPROM.write(0, packed_alarm_types);
@@ -429,21 +454,22 @@ void record_settings_in_eeprom() {
 }
 
 void read_settings_from_eeprom() {
+  //TODO change to zone
   byte packed_alarm_types = EEPROM.read(0);
   Serial.print("EEPROM: read ");
   Serial.println(packed_alarm_types, BIN);
-  for(int i = 0; i < NR_ALARM_PINS; i++) {
+  for(int i = 0; i < NR_ZONES; i++) {
     byte packed_at = (packed_alarm_types & (B00000011 << (2 * i))) >> (2 * i);
     ALARM_TYPE at = byte2alarm_type(packed_at);
-    alarm_types[i] = at;
+    zones[i].alarm_type = at;
   }
 }
 
 void lcd_print_alarm_types() {
   lcd.setCursor(0, 0);
   
-  for(int i = 0; i < NR_ALARM_PINS; i++) {
-    switch(alarm_types[i]) {
+  for(int i = 0; i < NR_ZONES; i++) {
+    switch(zones[i].alarm_type) {
       case ENTRY_EXIT:
         lcd.print("E");
         break;
@@ -460,12 +486,12 @@ void lcd_print_alarm_types() {
   }
 }
 
-void handle_alarm_zone(ALARM_TYPE at, byte pin){
-  switch (at) {
+void handle_alarm_zone(ZONE *zone){
+  switch (zone->alarm_type) {
     case ENTRY_EXIT:
       break;
     case DIGITAL:
-      handle_digital_zone(pin);
+      handle_digital_zone(zone);
       break;
     case ANALOG:
       break;
@@ -509,6 +535,11 @@ void setup(){
 
   //interrupts
   pinMode(13, OUTPUT);
+  pinMode(A0, INPUT);
+  pinMode(A1, INPUT);
+  pinMode(A2, INPUT);
+  pinMode(A3, INPUT);
+  pinMode(BUZZER, OUTPUT);
   cli(); //disable global interrupts
   TCCR1A = 0;
   TCCR1B = 0;
@@ -520,13 +551,19 @@ void setup(){
   
   sei(); // enable global interrupts
 
-  for(int i = 0; i < NR_ALARM_PINS; i++){
+  for(int i = 0; i < NR_ZONES; i++){
     // TODO: READ FROM EEPROM PREVIOUS SETTINGS
-    alarm_types[i] = CONTINUOUS;
+    zones[i].alarm_type = DIGITAL;
+    zones[i].pin = A0 + i;
+    zones[i].value = 0;
+    zones[i].state = 0;
   }
-  Serial.begin(9600);
-  //record_settings_in_eeprom();
-  read_settings_from_eeprom();
+  
+  
+  
+  Serial.begin(9600); 
+  record_settings_in_eeprom();
+  //read_settings_from_eeprom();
   
   
   irrecv.enableIRIn(); // Start the receiver
@@ -538,8 +575,8 @@ void loop() {
     CBCaller(keyToInt(results.value));
     irrecv.resume();
   }
-  for (int i = 0; i < NR_ALARM_PINS; i++) {
-    handle_alarm_zone(alarm_types[i], i);
+  for (int i = 0; i < NR_ZONES; i++) {
+    handle_alarm_zone(&zones[i]);
   }
 }
 
