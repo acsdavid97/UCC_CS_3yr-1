@@ -1,5 +1,4 @@
-#include <Time.h>
-#include <TimeLib.h>
+
 
 //Simple Interface Code for the Arduino IR receiver
 // Prof J.P.Morrison Nov 13th 2017
@@ -8,6 +7,9 @@
 #include <IRremote.h>
 #include <LiquidCrystal.h>
 #include <avr/interrupt.h>
+#include <EEPROM.h>
+#include <Time.h>
+#include <TimeLib.h>
 
 #define  IR_0       0xff6897
 #define  IR_1       0xff30cf
@@ -31,7 +33,16 @@
 #define  IR_BACK    0xffb04f
 #define  IR_100     0xff9867
 
-int RECV_PIN = 9;
+typedef enum {
+  ENTRY_EXIT, DIGITAL, ANALOG, CONTINUOUS
+} ALARM_TYPE;
+
+const int RECV_PIN = 9;
+const int BUZZER = 8;
+#define NR_ALARM_PINS 4
+
+ALARM_TYPE alarm_types[NR_ALARM_PINS];
+
 IRrecv irrecv(RECV_PIN);
 decode_results results;
 
@@ -49,15 +60,102 @@ boolean in_menu = false;
 byte menu_index = 0;
 const byte MENU_LEN = 2;
 
+byte read_two_digits() {
+  byte value = 0;
+  for (int i = 0; i < 2;){
+    if (irrecv.decode(&results)){
+      if (results.value == IR_BACK){
+        IR_BACK_CB();
+        return 255;
+      }
+      int key = keyToInt(results.value);
+      if (key >= 0 && key < 10) {
+        Serial.println(key);
+        value = value * 10 + key;
+        i++;
+      }
+      irrecv.resume();
+    }
+  }
+  return value;
+}
+
 void set_time_menu(){
   lcd.clear();
-  lcd.print("werks");
+  lcd.print("ENTER TIME");
+
+  
+  lcd.setCursor(0,1);
+  byte hours = read_two_digits();
+  if (hours == 255) return;
+  if (hours > 24){ 
+    lcd.print("ERROR");
+    return;
+  }
+  
+  
+  lcd.print(hours);
+  lcd.print(":");
+  byte minutes = read_two_digits();
+  if (minutes == 255) return;
+  if (minutes > 60){ 
+    lcd.print("ERROR");
+    return;
+  }
+ 
+  
+  lcd.print(minutes);
+  lcd.print(":");
+  byte seconds = read_two_digits();
+  if (seconds == 255) return;
+  if (seconds > 60){
+    lcd.print("ERROR");
+    return;
+  }
+  lcd.print(seconds);
+  
+  setTime(hours, minutes, seconds, day(), month(), year());
+  IR_BACK_CB();
 }
 
 void set_date_menu() {
   lcd.clear();
-  lcd.print("it also wekrs");
+  lcd.print("ENTER DATE");
+
+  lcd.setCursor(0,1);
+  byte days = read_two_digits();
+  if (days == 255) return;
+  if (days > 31){ 
+    lcd.print("ERROR");
+    return;
+  }
+  
+  lcd.print(days);
+  lcd.print(":");
+  
+  byte months = read_two_digits();
+  if (months == 255) return;
+  if (months > 12){ 
+    lcd.print("ERROR");
+    return;
+  }
+ 
+  
+  lcd.print(months);
+  lcd.print(":");
+  
+  byte years = read_two_digits();
+  if (years == 255) return;
+  if (years > 37){
+    lcd.print("ERROR");
+    return;
+  }
+  lcd.print(years);
+  
+  setTime(hour(), minute(), second(), days, months, (years+2000));
+  IR_BACK_CB();
 }
+
 
 MenuFunction menu_functions[] = {set_time_menu, set_date_menu};
 
@@ -281,6 +379,101 @@ void CBCaller(int keyInt){
   }
 }
 
+void handle_digital_zone(byte pin) {
+  
+}
+
+
+
+void record_event_in_eeprom(ALARM_TYPE at, byte pin){
+  
+}
+
+byte alarm_type2byte(ALARM_TYPE at) {
+  switch(at){
+    case ENTRY_EXIT:
+      return 0;
+    case DIGITAL:
+      return 1;
+    case ANALOG:
+      return 2;
+    case CONTINUOUS:
+      return 3;
+  }
+  return 0;
+}
+
+ALARM_TYPE byte2alarm_type(byte b) {
+  switch(b){
+    case 0:
+      return ENTRY_EXIT;
+    case 1:
+      return DIGITAL;
+    case 2:
+      return ANALOG;
+    case 3:
+      return CONTINUOUS;
+  }
+  return ENTRY_EXIT;
+}
+
+void record_settings_in_eeprom() {
+  byte packed_alarm_types = 0;
+  for(int i = 0; i < NR_ALARM_PINS; i++) {
+    byte at = alarm_type2byte(alarm_types[i]); 
+    packed_alarm_types |= at << (2 * i);
+  }
+  EEPROM.write(0, packed_alarm_types);
+  Serial.print("EEPROM: write ");
+  Serial.println(packed_alarm_types, BIN);
+}
+
+void read_settings_from_eeprom() {
+  byte packed_alarm_types = EEPROM.read(0);
+  Serial.print("EEPROM: read ");
+  Serial.println(packed_alarm_types, BIN);
+  for(int i = 0; i < NR_ALARM_PINS; i++) {
+    byte packed_at = (packed_alarm_types & (B00000011 << (2 * i))) >> (2 * i);
+    ALARM_TYPE at = byte2alarm_type(packed_at);
+    alarm_types[i] = at;
+  }
+}
+
+void lcd_print_alarm_types() {
+  lcd.setCursor(0, 0);
+  
+  for(int i = 0; i < NR_ALARM_PINS; i++) {
+    switch(alarm_types[i]) {
+      case ENTRY_EXIT:
+        lcd.print("E");
+        break;
+      case DIGITAL:
+        lcd.print("D");
+        break;
+      case ANALOG:
+        lcd.print("A");
+        break;
+      case CONTINUOUS:
+        lcd.print("C");
+        break;
+    }
+  }
+}
+
+void handle_alarm_zone(ALARM_TYPE at, byte pin){
+  switch (at) {
+    case ENTRY_EXIT:
+      break;
+    case DIGITAL:
+      handle_digital_zone(pin);
+      break;
+    case ANALOG:
+      break;
+    case CONTINUOUS:
+      break;          
+  }
+}
+
 void lcd_digits(int digits){
   if(digits < 10){
     lcd.print('0');
@@ -295,6 +488,12 @@ void lcd_time() {
   lcd_digits(minute());
   lcd.print(":");
   lcd_digits(second());
+  lcd.print("  ");
+  lcd_digits(day());
+  lcd_digits(month());
+  lcd_digits(year() % 100);
+  //TODO: remove it in the future
+  lcd_print_alarm_types();
 }
 
 
@@ -320,8 +519,16 @@ void setup(){
   TIMSK1 |= (1 << OCIE1A); //enable CTC interrupt
   
   sei(); // enable global interrupts
-  
+
+  for(int i = 0; i < NR_ALARM_PINS; i++){
+    // TODO: READ FROM EEPROM PREVIOUS SETTINGS
+    alarm_types[i] = CONTINUOUS;
+  }
   Serial.begin(9600);
+  //record_settings_in_eeprom();
+  read_settings_from_eeprom();
+  
+  
   irrecv.enableIRIn(); // Start the receiver
   pinMode(RECV_PIN, INPUT);
 }
@@ -330,6 +537,9 @@ void loop() {
   if (irrecv.decode(&results)) {
     CBCaller(keyToInt(results.value));
     irrecv.resume();
+  }
+  for (int i = 0; i < NR_ALARM_PINS; i++) {
+    handle_alarm_zone(alarm_types[i], i);
   }
 }
 
