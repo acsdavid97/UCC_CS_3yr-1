@@ -12,6 +12,7 @@
 #include <TimeLib.h>
 
 #include "zone.h"
+#include "event.h"
 
 #define  IR_0       0xff6897
 #define  IR_1       0xff30cf
@@ -74,9 +75,20 @@ boolean alarm_rang = false;
 
 byte menu_index = 0;
 const byte MENU_LEN = 3;
+
+#define PASSWORD_LEN 4
 int user_password = 0;
 volatile byte exit_time = 5;
 byte entry_time = 0;
+
+//TODO change the value of offset
+#define ALARM_EVENT_ADDR 2
+#define PASSWORD_ADDR 0
+#define ZONES_ADDR 4
+#define MINIM_EVENT_OFFSET 24
+#define EVENT_SIZE 5
+
+int alarm_event_offset = MINIM_EVENT_OFFSET;
 
 void IR_0_CB(){
   Serial.println("IR_0_CB");
@@ -135,9 +147,7 @@ void IR_ON_OFF_CB(){
   Serial.println("IR_ON_OFF_CB");
   //activate alarm
   if (active_alarm) return;
-  byte head = read_two_digits();
-  byte tail = read_two_digits();
-  int password = head * 100 + tail;
+  int password = read_password();
   if (password == user_password) {
     count_down =  true;
   }else{
@@ -405,22 +415,48 @@ void set_date_menu() {
 }
 
 int read_password() {
-  byte fst = read_two_digits();
-  if (fst == 255) {
-    return -1;
+  int password = 0;
+  lcd.setCursor(0, 1);
+  for(byte i = 0; i < PASSWORD_LEN; i++) {
+    byte digit = read_digit();
+    lcd.print("*");
+    if (digit == 255) {
+      return -1;
+    }
+    password = 10 * password + digit;
   }
-  byte snd = read_two_digits();
-  if (snd == 255) {
-    return -1;
-  }
-  return fst * 100 + snd;
+  return password;
+//  byte fst = read_two_digits();
+//  if (fst == 255) {
+//    return -1;
+//  }
+//  byte snd = read_two_digits();
+//  if (snd == 255) {
+//    return -1;
+//  }
+//  return fst * 100 + snd;
 }
 
 void set_password_menu() {
+  lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("CURRENT PASSWORD");
-  
-  
+  lcd.setCursor(0, 0);
+  int password = read_password();
+  if (password == user_password) {
+    lcd.clear();
+    lcd.print("NEW PASSWORD");
+    int new_pass = read_password();
+    user_password = new_pass;
+    lcd.clear();
+    lcd.print("SUCCESS");
+    record_password_in_eeprom(user_password);
+  }else {
+    lcd.setCursor(0, 0);
+    lcd.print("INCORRECT PASSWORD");
+  }
+  delay(1500);
+  IR_BACK_CB();
 }
 
 void updateMenu() {
@@ -431,19 +467,26 @@ void updateMenu() {
   lcd.print(menu_names[menu_index]);
 }
 
-void ring_the_alarm() {
+void ring_the_alarm(ZONE *zone) {
   //TODO: a function which waits for the user to entry the password
   //TODO: record the alarm in EEPROM
   alarm_rang = true;
+  show_time = false;
   digitalWrite(BUZZER, HIGH);
+  record_event_in_eeprom(zone);
   int password;
   do {
+    lcd.clear();
+    lcd.print("ENTER PASSWORD");
+    lcd.setCursor(0, 1);
     password = read_password();
     Serial.print("password:");
     Serial.println(password);
   }while(password != user_password);
   //if (password == user_password)
   digitalWrite(BUZZER, LOW);
+  show_time = true;
+  lcd.clear();
 }
 void handle_entry_exit_zone(ZONE *zone){
   if (active_alarm){
@@ -451,19 +494,12 @@ void handle_entry_exit_zone(ZONE *zone){
     Serial.println("in active alarm");
     Serial.println(currentState);
     if (currentState && !zone->state){
-      Serial.println("de ce nu intri in if");
       entry_time = zone->value;
       count_down2 = true;
       
     }
     if (entry_password){
-        //TODO: a function for reading password
-        //
-        //byte head = read_two_digits();
-//        byte tail = read_two_digits();
-//        int password = head * 100 + tail;
-//        if (password == user_password) {
-          ring_the_alarm();
+          ring_the_alarm(zone);
           entry_password = false;
           active_alarm = false;
           count_down2 = false;
@@ -479,11 +515,11 @@ void handle_digital_zone(ZONE *zone) {
   byte currentState = digitalRead(zone->pin);
   if (zone->value) {
     if (currentState && !zone->state){
-      ring_the_alarm();
+      ring_the_alarm(zone);
     }
   }else {
     if (!currentState && zone->state){
-      ring_the_alarm();
+      ring_the_alarm(zone);
     }
   }
   zone->state = currentState;
@@ -496,32 +532,75 @@ void handle_analog_zone(ZONE *zone) {
   // TODO: since the analog input may change from threshold -1 to threshold 
   // we will have a RISING edge when the potentiometer is being turned down.
   if (value >= zone->value && zone->state < zone->value) {
-    ring_the_alarm();
+    ring_the_alarm(zone);
   }
   zone->state = value;
 }
 
+void record_alarm_event_offset() {
+  Serial.print("alarm offset written");
+  Serial.println(alarm_event_offset);
+  EEPROM.write(ALARM_EVENT_ADDR + 0, highByte(alarm_event_offset));
+  EEPROM.write(ALARM_EVENT_ADDR + 1, lowByte(alarm_event_offset));
+}
+
+void read_alarm_event_offset() {
+  byte hi = EEPROM.read(ALARM_EVENT_ADDR + 0);
+  byte lo = EEPROM.read(ALARM_EVENT_ADDR + 1);
+  alarm_event_offset = word(hi, lo);
+  Serial.print("alarm offset read");
+  Serial.println(alarm_event_offset);
+}
+
 void record_event_in_eeprom(ZONE *zone){
-  
+  int offset = alarm_event_offset;
+  time_t t = now();
+  Serial.print("time when recorded");
+  Serial.println(t);
+  unsigned int fst = t >> 16;
+  unsigned int snd = (unsigned int) t;
+  EEPROM.write(offset + 0, highByte(fst));
+  EEPROM.write(offset + 1, lowByte(fst));
+  EEPROM.write(offset + 2, highByte(snd));
+  EEPROM.write(offset + 3, lowByte(snd));
+  byte packed_pin_zone = zone->pin;
+  byte at = alarm_type2byte(zone->alarm_type);
+  packed_pin_zone |= (at << 6);
+  EEPROM.write(offset + 4, packed_pin_zone);
+  alarm_event_offset += EVENT_SIZE;
+  if (alarm_event_offset > 512 - EVENT_SIZE) {
+    alarm_event_offset = MINIM_EVENT_OFFSET;
+  }
+  record_alarm_event_offset();
 }
 
-
-
-#define PASSWORD_ADDR 0
-#define ZONES_ADDR 2
-
-void record_password_in_eeprom(){
-  byte hipass = highByte(user_password);
-  byte lopass = lowByte(user_password);
-  EEPROM.write(0, hipass);
-  EEPROM.write(1, lopass);
+EVENT read_event_from_eeprom(int offset) {
+  EVENT event;
+  byte hifst = EEPROM.read(offset + 0);
+  byte lofst = EEPROM.read(offset + 1);
+  unsigned int fst = word(hifst, lofst);
+  byte hisnd = EEPROM.read(offset + 2);
+  byte losnd = EEPROM.read(offset + 3);
+  unsigned int snd = word(hisnd, losnd);
+  event.t = ((time_t)fst << 16) | snd;
+  byte packed_pin_zone = EEPROM.read(offset + 4);
+  byte at = packed_pin_zone >> 6;
+  event.alarm_type = byte2alarm_type(at);
+  event.pin = packed_pin_zone & (B00111111);
+  return event;
 }
 
+void record_password_in_eeprom(int password){
+  byte hipass = highByte(password);
+  byte lopass = lowByte(password);
+  EEPROM.write(PASSWORD_ADDR, hipass);
+  EEPROM.write(PASSWORD_ADDR + 1, lopass);
+}
 
-void read_password_from_eeprom(){
+int read_password_from_eeprom(){
   byte hipass = EEPROM.read(PASSWORD_ADDR);
   byte lopass = EEPROM.read(PASSWORD_ADDR + 1);
-  user_password = word(hipass, lopass);
+  return word(hipass, lopass);
 }
 
 void record_settings_in_eeprom() {
@@ -698,10 +777,35 @@ void setup(){
   // Continuous alarm needs the value to be set the value to 0;
   zones[3].value = 0;
   
-  Serial.begin(9600); 
   record_settings_in_eeprom();
   read_settings_from_eeprom();
+  user_password = read_password_from_eeprom();
+  read_alarm_event_offset();
+
+  Serial.begin(9600); 
+
+  Serial.print("event offset");
+  Serial.println(alarm_event_offset);
+
+    // TODO remove
+  EVENT eveent = read_event_from_eeprom(alarm_event_offset - EVENT_SIZE);
+  Serial.print("time:");
+  Serial.print(hour(eveent.t));
+  Serial.print(":");
+  Serial.print(minute(eveent.t));
+  Serial.print(":");
+  Serial.print(second(eveent.t));
+  Serial.print(":   ");
+  Serial.print(day(eveent.t));
+  Serial.print(":");
+  Serial.print(month(eveent.t));
+  Serial.print(":");
+  Serial.println(year(eveent.t));
   
+  Serial.print("pin");
+  Serial.println(eveent.pin - A0);
+  Serial.print("at");
+  Serial.println(eveent.alarm_type);
   irrecv.enableIRIn(); // Start the receiver
   pinMode(RECV_PIN, INPUT);
 }
