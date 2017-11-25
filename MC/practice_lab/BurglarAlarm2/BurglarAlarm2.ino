@@ -36,12 +36,17 @@
 #define  IR_BACK    0xffb04f
 #define  IR_100     0xff9867
 
-
-
-const int RECV_PIN = 9;
-const int BUZZER = 8;
 #define NR_ZONES 4
+#define PASSWORD_LEN 4
 
+#define ALARM_EVENT_ADDR 2
+#define PASSWORD_ADDR 0
+#define ZONES_ADDR 4
+#define MINIM_EVENT_OFFSET 24
+#define EVENT_SIZE 5
+
+#define RECV_PIN 9
+#define BUZZER 8
 
 ZONE zones[NR_ZONES];
 
@@ -59,10 +64,12 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 void set_time_menu();
 void set_date_menu();
-void set_password_menu();
+void set_user_password_menu();
+void set_engineer_password_menu();
+void set_zone_menu();
 
-MenuFunction menu_functions[] = {set_time_menu, set_date_menu, set_password_menu};
-char* menu_names[] = {"SET TIME", "SET DATE", "SET PASSWORD"};
+MenuFunction menu_functions[] = {set_time_menu, set_date_menu, set_user_password_menu, set_engineer_password_menu, set_zone_menu};
+char* menu_names[] = {"SET TIME", "SET DATE", "SET USR PASSWORD", "SET ENG PASSWORD", "SET ZONES"};
 
 boolean show_time = true;
 boolean in_menu = false;
@@ -74,19 +81,15 @@ volatile boolean entry_password = false;
 boolean alarm_rang = false;
 
 byte menu_index = 0;
-const byte MENU_LEN = 3;
+const byte MENU_LEN = sizeof(menu_functions)/sizeof(MenuFunction);
 
-#define PASSWORD_LEN 4
+
 int user_password = 0;
 volatile byte exit_time = 5;
 byte entry_time = 0;
 
 //TODO change the value of offset
-#define ALARM_EVENT_ADDR 2
-#define PASSWORD_ADDR 0
-#define ZONES_ADDR 4
-#define MINIM_EVENT_OFFSET 24
-#define EVENT_SIZE 5
+
 
 int alarm_event_offset = MINIM_EVENT_OFFSET;
 
@@ -335,10 +338,12 @@ byte read_two_digits() {
   if (fst == 255) {
     return 255;
   }
+  lcd.print(fst);
   byte snd = read_digit();
   if (snd == 255) {
     return 255;
   }
+  lcd.print(snd);
   return 10 * fst + snd;
 }
 
@@ -354,7 +359,7 @@ void set_time_menu(){
     return;
   }
   
-  lcd.print(hours);
+  //lcd.print(hours);
   lcd.print(":");
   byte minutes = read_two_digits();
   if (minutes == 255) return;
@@ -363,7 +368,7 @@ void set_time_menu(){
     return;
   }
   
-  lcd.print(minutes);
+  //lcd.print(minutes);
   lcd.print(":");
   byte seconds = read_two_digits();
   if (seconds == 255) return;
@@ -371,7 +376,7 @@ void set_time_menu(){
     lcd.print("ERROR");
     return;
   }
-  lcd.print(seconds);
+  //lcd.print(seconds);
   
   setTime(hours, minutes, seconds, day(), month(), year());
   IR_BACK_CB();
@@ -389,7 +394,7 @@ void set_date_menu() {
     return;
   }
   
-  lcd.print(days);
+  //lcd.print(days);
   lcd.print(":");
   
   byte months = read_two_digits();
@@ -399,7 +404,7 @@ void set_date_menu() {
     return;
   }
  
-  lcd.print(months);
+  //lcd.print(months);
   lcd.print(":");
   
   byte years = read_two_digits();
@@ -408,7 +413,7 @@ void set_date_menu() {
     lcd.print("ERROR");
     return;
   }
-  lcd.print(years);
+  //lcd.print(years);
   
   setTime(hour(), minute(), second(), days, months, (years+2000));
   IR_BACK_CB();
@@ -425,6 +430,7 @@ int read_password() {
     }
     password = 10 * password + digit;
   }
+  delay(100);
   return password;
 //  byte fst = read_two_digits();
 //  if (fst == 255) {
@@ -437,7 +443,7 @@ int read_password() {
 //  return fst * 100 + snd;
 }
 
-void set_password_menu() {
+void set_user_password_menu() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("CURRENT PASSWORD");
@@ -457,6 +463,97 @@ void set_password_menu() {
   }
   delay(1500);
   IR_BACK_CB();
+}
+
+void set_engineer_password_menu() {
+  
+}
+
+
+void handle_set_zone(byte choice){
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ENTER TYPE");
+  lcd.setCursor(0, 1);
+  lcd.print("EE-1 D-2 A-3 C-4");
+  byte zone = read_digit();
+  if (zone < 1 || zone > 4){
+    lcd.clear();
+    lcd.print("ERROR");
+    delay(1000);
+    IR_BACK_CB();
+    return;
+  }  
+  ALARM_TYPE at = byte2alarm_type(zone - 1);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  byte value = 0;
+  int threshold = 0;
+  switch (at){
+    case ENTRY_EXIT:
+      lcd.print("ENTER E/E TIME");
+      lcd.setCursor(0,1);
+      value = read_two_digits();
+      if (value == 255){
+        lcd.print("ERROR");
+        delay(1000);
+        return;
+      }
+      lcd.print(value);
+      zones[choice].alarm_type = at;
+      zones[choice].value = value;
+      zones[choice].state = 0;
+      break;         
+    case DIGITAL:
+      lcd.print("ENTER ACTIVE TYPE");
+      lcd.setCursor(0, 1);
+      lcd.print("0->1(1) 1->0(0)");
+      value = read_digit();
+      if (value == 0 || value == 1){
+        zones[choice].alarm_type = at;
+        zones[choice].value = value;
+        zones[choice].state = 0;       
+      }
+      break;
+    case ANALOG:
+      lcd.print("ENTER THRESHOLD");
+      lcd.setCursor(0,1);
+      for (byte i = 0; i < 4; i++){
+        byte digit = read_digit();
+        lcd.print(digit);
+        if (digit == 255){
+          break;
+        }
+        threshold = threshold * 10 + digit;
+      }
+      zones[choice].alarm_type = at;
+      zones[choice].value = threshold;
+      zones[choice].state = 0;
+
+      break;
+    case CONTINUOUS:
+      zones[choice].alarm_type = at;
+      zones[choice].value = 0;
+      zones[choice].state = 0;      
+  }
+}
+
+void set_zone_menu() {
+  lcd.clear();
+  lcd.print("SELECT ZONE");
+  lcd.setCursor(0, 1);
+  lcd.print("BETWEEN 1-");
+  lcd.print(NR_ZONES);
+  byte choice = read_digit();
+  if (choice < 1 || choice > NR_ZONES){
+    lcd.clear();
+    lcd.print("ERROR");
+    delay(1000);
+    IR_BACK_CB();
+    return;
+  }
+  handle_set_zone(choice - 1);
+    
 }
 
 void updateMenu() {
@@ -777,7 +874,7 @@ void setup(){
   // Continuous alarm needs the value to be set the value to 0;
   zones[3].value = 0;
   
-  record_settings_in_eeprom();
+  //record_settings_in_eeprom();
   read_settings_from_eeprom();
   user_password = read_password_from_eeprom();
   read_alarm_event_offset();
