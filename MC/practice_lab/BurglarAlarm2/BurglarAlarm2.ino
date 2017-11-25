@@ -1,4 +1,4 @@
-
+//save the password in EEPROM
 
 //Simple Interface Code for the Arduino IR receiver
 // Prof J.P.Morrison Nov 13th 2017
@@ -10,6 +10,8 @@
 #include <EEPROM.h>
 #include <Time.h>
 #include <TimeLib.h>
+
+#include "zone.h"
 
 #define  IR_0       0xff6897
 #define  IR_1       0xff30cf
@@ -33,16 +35,7 @@
 #define  IR_BACK    0xffb04f
 #define  IR_100     0xff9867
 
-typedef enum {
-  ENTRY_EXIT, DIGITAL, ANALOG, CONTINUOUS
-} ALARM_TYPE;
 
-typedef struct {
-  ALARM_TYPE alarm_type;
-  byte pin;
-  byte value;
-  byte state;
-}ZONE;
 
 const int RECV_PIN = 9;
 const int BUZZER = 8;
@@ -54,6 +47,7 @@ ZONE zones[NR_ZONES];
 IRrecv irrecv(RECV_PIN);
 decode_results results;
 
+
 // function pointer to menu functions.
 typedef void (*MenuFunction)();
 
@@ -62,148 +56,27 @@ typedef void (*MenuFunction)();
 const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
+void set_time_menu();
+void set_date_menu();
+void set_password_menu();
+
+MenuFunction menu_functions[] = {set_time_menu, set_date_menu, set_password_menu};
+char* menu_names[] = {"SET TIME", "SET DATE", "SET PASSWORD"};
+
 boolean show_time = true;
 boolean in_menu = false;
+volatile boolean active_alarm = false;
+volatile boolean count_down = false;
+volatile boolean count_down2 = false;
+volatile boolean entry_password = false;
+
+boolean alarm_rang = false;
 
 byte menu_index = 0;
-const byte MENU_LEN = 2;
-
-byte read_two_digits() {
-  byte value = 0;
-  for (int i = 0; i < 2;){
-    if (irrecv.decode(&results)){
-      if (results.value == IR_BACK){
-        IR_BACK_CB();
-        return 255;
-      }
-      int key = keyToInt(results.value);
-      if (key >= 0 && key < 10) {
-        Serial.println(key);
-        value = value * 10 + key;
-        i++;
-      }
-      irrecv.resume();
-    }
-  }
-  return value;
-}
-
-void set_time_menu(){
-  lcd.clear();
-  lcd.print("ENTER TIME");
-
-  
-  lcd.setCursor(0,1);
-  byte hours = read_two_digits();
-  if (hours == 255) return;
-  if (hours > 24){ 
-    lcd.print("ERROR");
-    return;
-  }
-  
-  
-  lcd.print(hours);
-  lcd.print(":");
-  byte minutes = read_two_digits();
-  if (minutes == 255) return;
-  if (minutes > 60){ 
-    lcd.print("ERROR");
-    return;
-  }
- 
-  
-  lcd.print(minutes);
-  lcd.print(":");
-  byte seconds = read_two_digits();
-  if (seconds == 255) return;
-  if (seconds > 60){
-    lcd.print("ERROR");
-    return;
-  }
-  lcd.print(seconds);
-  
-  setTime(hours, minutes, seconds, day(), month(), year());
-  IR_BACK_CB();
-}
-
-void set_date_menu() {
-  lcd.clear();
-  lcd.print("ENTER DATE");
-
-  lcd.setCursor(0,1);
-  byte days = read_two_digits();
-  if (days == 255) return;
-  if (days > 31){ 
-    lcd.print("ERROR");
-    return;
-  }
-  
-  lcd.print(days);
-  lcd.print(":");
-  
-  byte months = read_two_digits();
-  if (months == 255) return;
-  if (months > 12){ 
-    lcd.print("ERROR");
-    return;
-  }
- 
-  
-  lcd.print(months);
-  lcd.print(":");
-  
-  byte years = read_two_digits();
-  if (years == 255) return;
-  if (years > 37){
-    lcd.print("ERROR");
-    return;
-  }
-  lcd.print(years);
-  
-  setTime(hour(), minute(), second(), days, months, (years+2000));
-  IR_BACK_CB();
-}
-
-
-MenuFunction menu_functions[] = {set_time_menu, set_date_menu};
-
-char* menu_names[] = {"SET TIME", "SET DATE"};
-
-
-int keyToInt(int key_pressed){
-  switch(key_pressed){
-    case IR_0: return 0;
-    case IR_1: return 1;
-    case IR_2: return 2;
-    case IR_3: return 3;
-    case IR_4: return 4;
-    case IR_5: return 5;
-    case IR_6: return 6;                                         
-    case IR_7: return 7;  
-    case IR_8: return 8;    
-    case IR_9: return 9; 
-    case IR_MINUS: return 10;  
-    case IR_PLUS: return 11;   
-    case IR_EQ: return 12;     
-    case IR_ON_OFF: return 13;     
-    case IR_MODE: return 14;   
-    case IR_MUTE: return 15; 
-    case IR_PLAY: return 16;   
-    case IR_REW: return 17;  
-    case IR_FF: return 18;
-    case IR_BACK: return 19;
-    case IR_100: return 20; 
-    default: return -1;     
-  }
-}
-
-void updateMenu() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("MENU");
-  lcd.setCursor(0, 1);
-  lcd.print(menu_names[menu_index]);
-}
+const byte MENU_LEN = 3;
+int user_password = 0;
+volatile byte exit_time = 5;
+byte entry_time = 0;
 
 void IR_0_CB(){
   Serial.println("IR_0_CB");
@@ -255,10 +128,22 @@ void IR_PLUS_CB(){
 
 void IR_EQ_CB(){
   Serial.println("IR_EQ_CB");
+  record_settings_in_eeprom();
 }
 
 void IR_ON_OFF_CB(){
   Serial.println("IR_ON_OFF_CB");
+  //activate alarm
+  if (active_alarm) return;
+  byte head = read_two_digits();
+  byte tail = read_two_digits();
+  int password = head * 100 + tail;
+  if (password == user_password) {
+    count_down =  true;
+  }else{
+    lcd.setCursor(0,0);
+    lcd.print("WRONG PASSWORD");
+  }
 }
 
 void IR_MODE_CB(){
@@ -387,81 +272,299 @@ void CBCaller(int keyInt){
   }
 }
 
+int keyToInt(int key_pressed){
+  switch(key_pressed){
+    case IR_0: return 0;
+    case IR_1: return 1;
+    case IR_2: return 2;
+    case IR_3: return 3;
+    case IR_4: return 4;
+    case IR_5: return 5;
+    case IR_6: return 6;                                         
+    case IR_7: return 7;  
+    case IR_8: return 8;    
+    case IR_9: return 9; 
+    case IR_MINUS: return 10;  
+    case IR_PLUS: return 11;   
+    case IR_EQ: return 12;     
+    case IR_ON_OFF: return 13;     
+    case IR_MODE: return 14;   
+    case IR_MUTE: return 15; 
+    case IR_PLAY: return 16;   
+    case IR_REW: return 17;  
+    case IR_FF: return 18;
+    case IR_BACK: return 19;
+    case IR_100: return 20; 
+    default: return -1;     
+  }
+}
+
+byte read_digit() {
+  byte i = 0;
+  for (i=0; i<1;) {
+    if (irrecv.decode(&results)){
+      if (results.value == IR_BACK){
+        IR_BACK_CB();
+        return 255;
+      }
+      int key = keyToInt(results.value);
+      if (key >= 0 && key < 10) {
+        Serial.print("key read:");
+        Serial.println(key);
+        i++;
+        irrecv.resume();
+        return key;
+      }
+      irrecv.resume();
+    }
+  }
+}
+
+byte read_two_digits() {
+  byte fst = read_digit();
+  if (fst == 255) {
+    return 255;
+  }
+  byte snd = read_digit();
+  if (snd == 255) {
+    return 255;
+  }
+  return 10 * fst + snd;
+}
+
+void set_time_menu(){
+  lcd.clear();
+  lcd.print("ENTER TIME");
+  
+  lcd.setCursor(0,1);
+  byte hours = read_two_digits();
+  if (hours == 255) return;
+  if (hours > 24){ 
+    lcd.print("ERROR");
+    return;
+  }
+  
+  lcd.print(hours);
+  lcd.print(":");
+  byte minutes = read_two_digits();
+  if (minutes == 255) return;
+  if (minutes > 60){ 
+    lcd.print("ERROR");
+    return;
+  }
+  
+  lcd.print(minutes);
+  lcd.print(":");
+  byte seconds = read_two_digits();
+  if (seconds == 255) return;
+  if (seconds > 60){
+    lcd.print("ERROR");
+    return;
+  }
+  lcd.print(seconds);
+  
+  setTime(hours, minutes, seconds, day(), month(), year());
+  IR_BACK_CB();
+}
+
+void set_date_menu() {
+  lcd.clear();
+  lcd.print("ENTER DATE");
+
+  lcd.setCursor(0,1);
+  byte days = read_two_digits();
+  if (days == 255) return;
+  if (days > 31){ 
+    lcd.print("ERROR");
+    return;
+  }
+  
+  lcd.print(days);
+  lcd.print(":");
+  
+  byte months = read_two_digits();
+  if (months == 255) return;
+  if (months > 12){ 
+    lcd.print("ERROR");
+    return;
+  }
+ 
+  lcd.print(months);
+  lcd.print(":");
+  
+  byte years = read_two_digits();
+  if (years == 255) return;
+  if (years > 37){
+    lcd.print("ERROR");
+    return;
+  }
+  lcd.print(years);
+  
+  setTime(hour(), minute(), second(), days, months, (years+2000));
+  IR_BACK_CB();
+}
+
+int read_password() {
+  byte fst = read_two_digits();
+  if (fst == 255) {
+    return -1;
+  }
+  byte snd = read_two_digits();
+  if (snd == 255) {
+    return -1;
+  }
+  return fst * 100 + snd;
+}
+
+void set_password_menu() {
+  lcd.setCursor(0, 0);
+  lcd.print("CURRENT PASSWORD");
+  
+  
+}
+
+void updateMenu() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MENU");
+  lcd.setCursor(0, 1);
+  lcd.print(menu_names[menu_index]);
+}
+
+void ring_the_alarm() {
+  //TODO: a function which waits for the user to entry the password
+  //TODO: record the alarm in EEPROM
+  alarm_rang = true;
+  digitalWrite(BUZZER, HIGH);
+  int password;
+  do {
+    password = read_password();
+    Serial.print("password:");
+    Serial.println(password);
+  }while(password != user_password);
+  //if (password == user_password)
+  digitalWrite(BUZZER, LOW);
+}
+void handle_entry_exit_zone(ZONE *zone){
+  if (active_alarm){
+    byte currentState = digitalRead(zone -> pin);
+    Serial.println("in active alarm");
+    Serial.println(currentState);
+    if (currentState && !zone->state){
+      Serial.println("de ce nu intri in if");
+      entry_time = zone->value;
+      count_down2 = true;
+      
+    }
+    if (entry_password){
+        //TODO: a function for reading password
+        //
+        //byte head = read_two_digits();
+//        byte tail = read_two_digits();
+//        int password = head * 100 + tail;
+//        if (password == user_password) {
+          ring_the_alarm();
+          entry_password = false;
+          active_alarm = false;
+          count_down2 = false;
+          entry_time = 10;
+        //}  
+      }
+    zone->state = currentState;
+  }
+  
+}
+
 void handle_digital_zone(ZONE *zone) {
-//  static byte bState[4] = {LOW, LOW, LOW, LOW};
-//  static byte prevBState[4] = {LOW, LOW, LOW, LOW};
-//  bState[pin-A0] = digitalRead(pin);
   byte currentState = digitalRead(zone->pin);
-  if (currentState && !zone->state){
-      Serial.println("pin");
-      Serial.println(zone->pin);
-      Serial.println("bState pin");
-      Serial.println(currentState);
-      digitalWrite(BUZZER, HIGH);
-      Serial.println("buzzer is high");
-      delay(1000);
-      digitalWrite(BUZZER, LOW);
-      Serial.println("buzzer is low");
+  if (zone->value) {
+    if (currentState && !zone->state){
+      ring_the_alarm();
+    }
+  }else {
+    if (!currentState && zone->state){
+      ring_the_alarm();
+    }
   }
   zone->state = currentState;
   
 }
 
+void handle_analog_zone(ZONE *zone) {
+  
+  int value = analogRead(zone->pin);
+  // TODO: since the analog input may change from threshold -1 to threshold 
+  // we will have a RISING edge when the potentiometer is being turned down.
+  if (value >= zone->value && zone->state < zone->value) {
+    ring_the_alarm();
+  }
+  zone->state = value;
+}
 
-
-void record_event_in_eeprom(ALARM_TYPE at, byte pin){
+void record_event_in_eeprom(ZONE *zone){
   
 }
 
-byte alarm_type2byte(ALARM_TYPE at) {
-  switch(at){
-    case ENTRY_EXIT:
-      return 0;
-    case DIGITAL:
-      return 1;
-    case ANALOG:
-      return 2;
-    case CONTINUOUS:
-      return 3;
-  }
-  return 0;
+
+
+#define PASSWORD_ADDR 0
+#define ZONES_ADDR 2
+
+void record_password_in_eeprom(){
+  byte hipass = highByte(user_password);
+  byte lopass = lowByte(user_password);
+  EEPROM.write(0, hipass);
+  EEPROM.write(1, lopass);
 }
 
-ALARM_TYPE byte2alarm_type(byte b) {
-  switch(b){
-    case 0:
-      return ENTRY_EXIT;
-    case 1:
-      return DIGITAL;
-    case 2:
-      return ANALOG;
-    case 3:
-      return CONTINUOUS;
-  }
-  return ENTRY_EXIT;
+
+void read_password_from_eeprom(){
+  byte hipass = EEPROM.read(PASSWORD_ADDR);
+  byte lopass = EEPROM.read(PASSWORD_ADDR + 1);
+  user_password = word(hipass, lopass);
 }
 
 void record_settings_in_eeprom() {
   //TODO change to zone
-  byte packed_alarm_types = 0;
+//  byte packed_alarm_types = 0;
   for(int i = 0; i < NR_ZONES; i++) {
-    byte at = alarm_type2byte(zones[i].alarm_type); 
-    packed_alarm_types |= at << (2 * i);
+      ZONE zone = zones[i];
+//    byte at = alarm_type2byte(zones[i].alarm_type); 
+//    packed_alarm_types |= at << (2 * i);
+      byte at = alarm_type2byte(zone.alarm_type);
+      byte hivalue = highByte(zone.value);
+      byte lovalue = lowByte(zone.value);
+      byte histate = highByte(zone.state);
+      byte lostate = lowByte(zone.state);
+      
+      EEPROM.write(ZONES_ADDR + 5*i + 0, at);
+      EEPROM.write(ZONES_ADDR + 5*i + 1, hivalue);
+      EEPROM.write(ZONES_ADDR + 5*i + 2, lovalue);
+      EEPROM.write(ZONES_ADDR + 5*i + 3, histate);
+      EEPROM.write(ZONES_ADDR + 5*i + 4, lostate); 
   }
-  EEPROM.write(0, packed_alarm_types);
-  Serial.print("EEPROM: write ");
-  Serial.println(packed_alarm_types, BIN);
 }
 
 void read_settings_from_eeprom() {
   //TODO change to zone
-  byte packed_alarm_types = EEPROM.read(0);
-  Serial.print("EEPROM: read ");
-  Serial.println(packed_alarm_types, BIN);
   for(int i = 0; i < NR_ZONES; i++) {
-    byte packed_at = (packed_alarm_types & (B00000011 << (2 * i))) >> (2 * i);
-    ALARM_TYPE at = byte2alarm_type(packed_at);
-    zones[i].alarm_type = at;
+//    byte packed_at = (packed_alarm_types & (B00000011 << (2 * i))) >> (2 * i);
+//    ALARM_TYPE at = byte2alarm_type(packed_at);
+//    zones[i].alarm_type = at;
+      byte packed_at = EEPROM.read(ZONES_ADDR + 5*i + 0);
+      byte hivalue = EEPROM.read(ZONES_ADDR + 5*i + 1);
+      byte lovalue = EEPROM.read(ZONES_ADDR + 5*i + 2);
+      byte histate = EEPROM.read(ZONES_ADDR + 5*i + 3);
+      byte lostate = EEPROM.read(ZONES_ADDR + 5*i + 4);
+      
+      ALARM_TYPE at = byte2alarm_type(packed_at);
+      zones[i].alarm_type = at;
+      zones[i].value = word(hivalue, lovalue);
+      zones[i].state = word(histate, lostate);
+      Serial.print("value:");
+      Serial.println(zones[i].value);
+      Serial.print("state:");
+      Serial.println(zones[i].state);
   }
 }
 
@@ -489,13 +592,16 @@ void lcd_print_alarm_types() {
 void handle_alarm_zone(ZONE *zone){
   switch (zone->alarm_type) {
     case ENTRY_EXIT:
+      handle_entry_exit_zone(zone);
       break;
     case DIGITAL:
       handle_digital_zone(zone);
       break;
     case ANALOG:
+      handle_analog_zone(zone);
       break;
     case CONTINUOUS:
+      handle_digital_zone(zone);
       break;          
   }
 }
@@ -522,11 +628,37 @@ void lcd_time() {
   lcd_print_alarm_types();
 }
 
+void lcd_timer_exit(){
+  lcd.setCursor(11,0);
+  lcd_digits(exit_time);
+}
 
+void lcd_timer_entry(){
+  lcd.setCursor(14,0);
+  lcd_digits(entry_time); 
+}
 
 ISR (TIMER1_COMPA_vect) {
   if (show_time)
     lcd_time();
+  if (count_down){
+     lcd_timer_exit();
+     exit_time--;
+     if (exit_time == 0){
+        Serial.println("exit time");
+        active_alarm = true;
+        count_down = false;
+        exit_time = 30;
+     } 
+  }
+  if (count_down2 && active_alarm){
+     entry_time--;
+     lcd_timer_entry();
+     if (entry_time == 0){
+        count_down2 = false;
+        entry_password = true;
+     }  
+  }
 }
 
 void setup(){
@@ -553,18 +685,22 @@ void setup(){
 
   for(int i = 0; i < NR_ZONES; i++){
     // TODO: READ FROM EEPROM PREVIOUS SETTINGS
-    zones[i].alarm_type = DIGITAL;
     zones[i].pin = A0 + i;
     zones[i].value = 0;
     zones[i].state = 0;
   }
-  
-  
+  zones[0].alarm_type = ENTRY_EXIT;
+  zones[0].value = 10;
+  zones[1].alarm_type = DIGITAL;
+  zones[2].alarm_type = ANALOG;
+  zones[2].value = 128;
+  zones[3].alarm_type = CONTINUOUS;
+  // Continuous alarm needs the value to be set the value to 0;
+  zones[3].value = 0;
   
   Serial.begin(9600); 
   record_settings_in_eeprom();
-  //read_settings_from_eeprom();
-  
+  read_settings_from_eeprom();
   
   irrecv.enableIRIn(); // Start the receiver
   pinMode(RECV_PIN, INPUT);
