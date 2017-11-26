@@ -39,14 +39,16 @@
 #define NR_ZONES 4
 #define PASSWORD_LEN 4
 
-#define ALARM_EVENT_ADDR 2
-#define PASSWORD_ADDR 0
-#define ZONES_ADDR 4
-#define MINIM_EVENT_OFFSET 24
+#define ALARM_EVENT_ADDR 4
+#define USER_PASSWORD_ADDR 0
+#define ENGINEER_PASSWORD_ADDR 2
+#define ZONES_ADDR 6
+#define MINIM_EVENT_OFFSET 26
 #define EVENT_SIZE 5
 
 #define RECV_PIN 9
 #define BUZZER 8
+#define WARNING_LED 7
 
 ZONE zones[NR_ZONES];
 
@@ -85,6 +87,7 @@ const byte MENU_LEN = sizeof(menu_functions)/sizeof(MenuFunction);
 
 
 int user_password = 0;
+int engineer_password = 0;
 volatile byte exit_time = 5;
 byte entry_time = 0;
 
@@ -150,13 +153,21 @@ void IR_ON_OFF_CB(){
   Serial.println("IR_ON_OFF_CB");
   //activate alarm
   if (active_alarm) return;
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("ACTIVE ALARM");
+  lcd.setCursor(0,1);
+  show_time = false;
   int password = read_password();
   if (password == user_password) {
     count_down =  true;
   }else{
     lcd.setCursor(0,0);
     lcd.print("WRONG PASSWORD");
+    delay(1000);
   }
+  lcd.clear();
+  show_time = true;
 }
 
 void IR_MODE_CB(){
@@ -430,7 +441,7 @@ int read_password() {
     }
     password = 10 * password + digit;
   }
-  delay(100);
+  delay(500);
   return password;
 //  byte fst = read_two_digits();
 //  if (fst == 255) {
@@ -443,30 +454,74 @@ int read_password() {
 //  return fst * 100 + snd;
 }
 
-void set_user_password_menu() {
+boolean verify_set_password(int *password){
+   int read_pssw = read_password();
+   if (read_pssw == *password) {
+    lcd.clear();
+    lcd.print("NEW PASSWORD");
+    int new_pass = read_password();
+    if (new_pass == -1) {
+      return false;
+    }
+    *password = new_pass;
+    lcd.clear();
+    lcd.print("SUCCESS");
+    return true;
+  }else {
+    lcd.setCursor(0, 0);
+    lcd.print("INCORRECT PASSWORD");
+    return false;
+  }
+}
+
+void set_password_menu(byte choice){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("CURRENT PASSWORD");
   lcd.setCursor(0, 0);
-  int password = read_password();
-  if (password == user_password) {
-    lcd.clear();
-    lcd.print("NEW PASSWORD");
-    int new_pass = read_password();
-    user_password = new_pass;
-    lcd.clear();
-    lcd.print("SUCCESS");
-    record_password_in_eeprom(user_password);
-  }else {
-    lcd.setCursor(0, 0);
-    lcd.print("INCORRECT PASSWORD");
+  boolean verify = false;
+  if (choice){
+    verify = verify_set_password(&engineer_password);
+    if (verify){
+      record_password_in_eeprom(engineer_password, choice);
+    }
   }
+  else{
+    verify = verify_set_password(&user_password);
+    if (verify){
+      record_password_in_eeprom(user_password, choice);
+    }  
+  } 
   delay(1500);
   IR_BACK_CB();
+  
+}
+
+void set_user_password_menu() {
+//  lcd.clear();
+//  lcd.setCursor(0, 0);
+//  lcd.print("CURRENT PASSWORD");
+//  lcd.setCursor(0, 0);
+//  int password = read_password();
+//  if (password == user_password) {
+//    lcd.clear();
+//    lcd.print("NEW PASSWORD");
+//    int new_pass = read_password();
+//    user_password = new_pass;
+//    lcd.clear();
+//    lcd.print("SUCCESS");
+//    record_password_in_eeprom(user_password);
+//  }else {
+//    lcd.setCursor(0, 0);
+//    lcd.print("INCORRECT PASSWORD");
+//  }
+//  delay(1500);
+//  IR_BACK_CB();
+  set_password_menu(0);
 }
 
 void set_engineer_password_menu() {
-  
+  set_password_menu(1);
 }
 
 
@@ -499,10 +554,10 @@ void handle_set_zone(byte choice){
         delay(1000);
         return;
       }
-      lcd.print(value);
       zones[choice].alarm_type = at;
       zones[choice].value = value;
       zones[choice].state = 0;
+      record_settings_in_eeprom();
       break;         
     case DIGITAL:
       lcd.print("ENTER ACTIVE TYPE");
@@ -512,7 +567,8 @@ void handle_set_zone(byte choice){
       if (value == 0 || value == 1){
         zones[choice].alarm_type = at;
         zones[choice].value = value;
-        zones[choice].state = 0;       
+        zones[choice].state = 0;
+        record_settings_in_eeprom();       
       }
       break;
     case ANALOG:
@@ -529,16 +585,27 @@ void handle_set_zone(byte choice){
       zones[choice].alarm_type = at;
       zones[choice].value = threshold;
       zones[choice].state = 0;
-
+      record_settings_in_eeprom();
       break;
     case CONTINUOUS:
       zones[choice].alarm_type = at;
       zones[choice].value = 0;
-      zones[choice].state = 0;      
+      zones[choice].state = 0;
+      record_settings_in_eeprom();      
   }
 }
 
 void set_zone_menu() {
+  lcd.clear();
+  lcd.print("ENG PASSWORD");
+  int password = read_password();
+  if (password != engineer_password){
+    lcd.clear();
+    lcd.print("WRONG PASSWORD");
+    delay(1000);
+    IR_BACK_CB();
+    return;
+  }
   lcd.clear();
   lcd.print("SELECT ZONE");
   lcd.setCursor(0, 1);
@@ -579,6 +646,7 @@ void ring_the_alarm(ZONE *zone) {
     password = read_password();
     Serial.print("password:");
     Serial.println(password);
+    // TODO: print incorrect password
   }while(password != user_password);
   //if (password == user_password)
   digitalWrite(BUZZER, LOW);
@@ -592,15 +660,39 @@ void handle_entry_exit_zone(ZONE *zone){
     Serial.println(currentState);
     if (currentState && !zone->state){
       entry_time = zone->value;
+      exit_time = zone->value;
       count_down2 = true;
-      
+      int password;
+      show_time = false;
+      do{
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("ENTER PASSWORD");
+        lcd.setCursor(0, 1);
+        password = read_password();
+        if (password == user_password) {
+          entry_password = false;
+          active_alarm = false;
+          count_down2 = false;
+          entry_time = zone->value;
+          exit_time = zone->value;
+        }else {
+          lcd.clear();
+          lcd.print("WRONG PASSWORD");
+          delay(1000);
+        }
+      }while(user_password != password);
+      lcd.clear();
+      digitalWrite(WARNING_LED, LOW);
+      show_time = true; 
     }
     if (entry_password){
           ring_the_alarm(zone);
           entry_password = false;
           active_alarm = false;
           count_down2 = false;
-          entry_time = 10;
+          entry_time = zone->value;
+          exit_time = zone->value;
         //}  
       }
     zone->state = currentState;
@@ -687,16 +779,30 @@ EVENT read_event_from_eeprom(int offset) {
   return event;
 }
 
-void record_password_in_eeprom(int password){
+void record_password_in_eeprom(int password, byte choice){
+  int address = 0;
+  if (choice){
+    address = USER_PASSWORD_ADDR;   
+  }
+  else{
+    address = ENGINEER_PASSWORD_ADDR;
+  }
   byte hipass = highByte(password);
   byte lopass = lowByte(password);
-  EEPROM.write(PASSWORD_ADDR, hipass);
-  EEPROM.write(PASSWORD_ADDR + 1, lopass);
+  EEPROM.write(address + 0, hipass);
+  EEPROM.write(address + 1, lopass);
 }
 
-int read_password_from_eeprom(){
-  byte hipass = EEPROM.read(PASSWORD_ADDR);
-  byte lopass = EEPROM.read(PASSWORD_ADDR + 1);
+int read_password_from_eeprom(byte choice){
+  int address = 0;
+  if (choice){
+    address = USER_PASSWORD_ADDR;   
+  }
+  else{
+    address = ENGINEER_PASSWORD_ADDR;
+  }
+  byte hipass = EEPROM.read(address + 0);
+  byte lopass = EEPROM.read(address + 1);
   return word(hipass, lopass);
 }
 
@@ -818,21 +924,25 @@ ISR (TIMER1_COMPA_vect) {
   if (show_time)
     lcd_time();
   if (count_down){
-     lcd_timer_exit();
+     //lcd_timer_exit();
      exit_time--;
+     digitalWrite(WARNING_LED, !digitalRead(WARNING_LED));
      if (exit_time == 0){
         Serial.println("exit time");
         active_alarm = true;
         count_down = false;
         exit_time = 30;
+        digitalWrite(WARNING_LED, LOW);
      } 
   }
   if (count_down2 && active_alarm){
      entry_time--;
-     lcd_timer_entry();
+//     lcd_timer_entry();
+     digitalWrite(WARNING_LED, !digitalRead(WARNING_LED));
      if (entry_time == 0){
         count_down2 = false;
         entry_password = true;
+        digitalWrite(WARNING_LED, LOW);
      }  
   }
 }
@@ -848,6 +958,7 @@ void setup(){
   pinMode(A2, INPUT);
   pinMode(A3, INPUT);
   pinMode(BUZZER, OUTPUT);
+  pinMode(WARNING_LED, OUTPUT);
   cli(); //disable global interrupts
   TCCR1A = 0;
   TCCR1B = 0;
@@ -876,13 +987,17 @@ void setup(){
   
   //record_settings_in_eeprom();
   read_settings_from_eeprom();
-  user_password = read_password_from_eeprom();
+  user_password = read_password_from_eeprom(0);
+  engineer_password = read_password_from_eeprom(1);
   read_alarm_event_offset();
 
   Serial.begin(9600); 
 
   Serial.print("event offset");
   Serial.println(alarm_event_offset);
+
+  Serial.print("eng pass:");
+  Serial.println(engineer_password);
 
     // TODO remove
   EVENT eveent = read_event_from_eeprom(alarm_event_offset - EVENT_SIZE);
