@@ -75,10 +75,6 @@ char* menu_names[] = {"SET TIME", "SET DATE", "SET USR PASSWORD", "SET ENG PASSW
 
 boolean show_time = true;
 boolean in_menu = false;
-volatile boolean active_alarm = false;
-volatile boolean count_down = false;
-volatile boolean count_down2 = false;
-volatile boolean entry_password = false;
 
 boolean alarm_rang = false;
 
@@ -88,8 +84,9 @@ const byte MENU_LEN = sizeof(menu_functions)/sizeof(MenuFunction);
 
 int user_password = 0;
 int engineer_password = 0;
-volatile byte exit_time = 5;
 byte entry_time = 0;
+
+int alarm_active_time = 0;
 
 //TODO change the value of offset
 
@@ -152,7 +149,6 @@ void IR_EQ_CB(){
 void IR_ON_OFF_CB(){
   Serial.println("IR_ON_OFF_CB");
   //activate alarm
-  if (active_alarm) return;
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("ACTIVE ALARM");
@@ -160,7 +156,10 @@ void IR_ON_OFF_CB(){
   show_time = false;
   int password = read_password();
   if (password == user_password) {
-    count_down =  true;
+    alarm_active_time = millis()/1000;
+    for(byte i = 0; i < NR_ZONES; i++) {
+      zones[i].active = true;
+    }
   }else{
     lcd.setCursor(0,0);
     lcd.print("WRONG PASSWORD");
@@ -329,6 +328,7 @@ byte read_digit() {
     if (irrecv.decode(&results)){
       if (results.value == IR_BACK){
         IR_BACK_CB();
+        irrecv.resume();
         return 255;
       }
       int key = keyToInt(results.value);
@@ -593,6 +593,7 @@ void handle_set_zone(byte choice){
       zones[choice].state = 0;
       record_settings_in_eeprom();      
   }
+  IR_BACK_CB();
 }
 
 void set_zone_menu() {
@@ -654,16 +655,14 @@ void ring_the_alarm(ZONE *zone) {
   lcd.clear();
 }
 void handle_entry_exit_zone(ZONE *zone){
-  if (active_alarm){
+  if (zone->active && 
+    alarm_active_time + zone->value < millis()/1000 ) {
     byte currentState = digitalRead(zone -> pin);
-    Serial.println("in active alarm");
-    Serial.println(currentState);
     if (currentState && !zone->state){
-      entry_time = zone->value;
-      exit_time = zone->value;
-      count_down2 = true;
       int password;
       show_time = false;
+      zone->time_triggered = millis()/1000;
+      zone->triggered = true;
       do{
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -671,11 +670,6 @@ void handle_entry_exit_zone(ZONE *zone){
         lcd.setCursor(0, 1);
         password = read_password();
         if (password == user_password) {
-          entry_password = false;
-          active_alarm = false;
-          count_down2 = false;
-          entry_time = zone->value;
-          exit_time = zone->value;
         }else {
           lcd.clear();
           lcd.print("WRONG PASSWORD");
@@ -685,19 +679,15 @@ void handle_entry_exit_zone(ZONE *zone){
       lcd.clear();
       digitalWrite(WARNING_LED, LOW);
       show_time = true; 
+      zone->active = false;
+      zone->triggered = false;
+      zone->time_triggered = 0;
+      digitalWrite(BUZZER, LOW);
+      show_time = true;
+      lcd.clear();
     }
-    if (entry_password){
-          ring_the_alarm(zone);
-          entry_password = false;
-          active_alarm = false;
-          count_down2 = false;
-          entry_time = zone->value;
-          exit_time = zone->value;
-        //}  
-      }
     zone->state = currentState;
   }
-  
 }
 
 void handle_digital_zone(ZONE *zone) {
@@ -910,41 +900,28 @@ void lcd_time() {
   lcd_print_alarm_types();
 }
 
-void lcd_timer_exit(){
-  lcd.setCursor(11,0);
-  lcd_digits(exit_time);
-}
-
-void lcd_timer_entry(){
-  lcd.setCursor(14,0);
-  lcd_digits(entry_time); 
-}
 
 ISR (TIMER1_COMPA_vect) {
   if (show_time)
     lcd_time();
-  if (count_down){
-     //lcd_timer_exit();
-     exit_time--;
-     digitalWrite(WARNING_LED, !digitalRead(WARNING_LED));
-     if (exit_time == 0){
-        Serial.println("exit time");
-        active_alarm = true;
-        count_down = false;
-        exit_time = 30;
-        digitalWrite(WARNING_LED, LOW);
-     } 
+  boolean toggle = false;
+  for(byte i = 0; i < NR_ZONES; i++) {
+    toggle = toggle || zones[i].triggered || zones[i].active 
+      && (zones[i].value + alarm_active_time) > millis()/1000 && zones[i].alarm_type == ENTRY_EXIT;
+    if (zones[i].active && zones[i].triggered) {
+      if (zones[i].time_triggered + zones[i].value < millis()/1000){
+        show_time = false;
+        digitalWrite(BUZZER, HIGH);
+        record_event_in_eeprom(&zones[i]);
+      }
+    }
   }
-  if (count_down2 && active_alarm){
-     entry_time--;
-//     lcd_timer_entry();
-     digitalWrite(WARNING_LED, !digitalRead(WARNING_LED));
-     if (entry_time == 0){
-        count_down2 = false;
-        entry_password = true;
-        digitalWrite(WARNING_LED, LOW);
-     }  
+  if (toggle){
+    digitalWrite(WARNING_LED, !digitalRead(WARNING_LED));
+  }else{
+    digitalWrite(WARNING_LED, LOW);
   }
+  
 }
 
 void setup(){
@@ -993,10 +970,12 @@ void setup(){
 
   Serial.begin(9600); 
 
-  Serial.print("event offset");
+  Serial.print("event offset: ");
   Serial.println(alarm_event_offset);
-
-  Serial.print("eng pass:");
+  
+  Serial.print("usr pass: ");
+  Serial.println(user_password);
+  Serial.print("eng pass: ");
   Serial.println(engineer_password);
 
     // TODO remove

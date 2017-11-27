@@ -11,6 +11,9 @@ typedef struct {
   byte pin;
   int value;
   int state;
+  boolean active;
+  int time_triggered;
+  boolean triggered;
 }ZONE;
 
 byte alarm_type2byte(ALARM_TYPE at);
