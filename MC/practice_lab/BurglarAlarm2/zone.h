@@ -2,10 +2,12 @@
 #define ZONE_H
 #include "Arduino.h"
 
+// possible alarm types
 typedef enum {
   ENTRY_EXIT, DIGITAL, ANALOG, CONTINUOUS
 } ALARM_TYPE;
 
+// zone struct, used to store values, previous state
 typedef struct {
   ALARM_TYPE alarm_type;
   byte pin;

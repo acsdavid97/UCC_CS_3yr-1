@@ -1,5 +1,6 @@
 #include "zone.h"
 
+//convert alarm type to byte
 byte alarm_type2byte(ALARM_TYPE at) {
   switch(at){
     case ENTRY_EXIT:
@@ -14,6 +15,7 @@ byte alarm_type2byte(ALARM_TYPE at) {
   return 0;
 }
 
+// converts a byte to alarm type
 ALARM_TYPE byte2alarm_type(byte b) {
   switch(b){
     case 0:

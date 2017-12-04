@@ -14,6 +14,7 @@
 #include "zone.h"
 #include "event.h"
 
+//IR codes
 #define  IR_0       0xff6897
 #define  IR_1       0xff30cf
 #define  IR_2       0xff18e7
@@ -36,9 +37,11 @@
 #define  IR_BACK    0xffb04f
 #define  IR_100     0xff9867
 
+// generic lengths
 #define NR_ZONES 4
 #define PASSWORD_LEN 4
 
+//EEPROM addresses
 #define ALARM_EVENT_ADDR 4
 #define USER_PASSWORD_ADDR 0
 #define ENGINEER_PASSWORD_ADDR 2
@@ -46,10 +49,12 @@
 #define MINIM_EVENT_OFFSET 26
 #define EVENT_SIZE 5
 
+//pins
 #define RECV_PIN 9
 #define BUZZER 8
 #define WARNING_LED 7
 
+//array of alarm zones
 ZONE zones[NR_ZONES];
 
 IRrecv irrecv(RECV_PIN);
@@ -70,29 +75,28 @@ void set_user_password_menu();
 void set_engineer_password_menu();
 void set_zone_menu();
 
+//menu functions and their corresponding names.
 MenuFunction menu_functions[] = {set_time_menu, set_date_menu, set_user_password_menu, set_engineer_password_menu, set_zone_menu};
 char* menu_names[] = {"SET TIME", "SET DATE", "SET USR PASSWORD", "SET ENG PASSWORD", "SET ZONES"};
-
-boolean show_time = true;
-boolean in_menu = false;
-
-boolean alarm_rang = false;
 
 byte menu_index = 0;
 const byte MENU_LEN = sizeof(menu_functions)/sizeof(MenuFunction);
 
+//global booleans, to control menus and alarms and LCD
+boolean show_time = true;
+boolean in_menu = false;
+boolean alarm_rang = false;
 
+//passwords
 int user_password = 0;
 int engineer_password = 0;
-byte entry_time = 0;
 
 int alarm_active_time = 0;
 
-//TODO change the value of offset
-
-
 int alarm_event_offset = MINIM_EVENT_OFFSET;
 
+
+//callback functions for IR buttons
 void IR_0_CB(){
   Serial.println("IR_0_CB");
 }
@@ -143,9 +147,9 @@ void IR_PLUS_CB(){
 
 void IR_EQ_CB(){
   Serial.println("IR_EQ_CB");
-  record_settings_in_eeprom();
 }
 
+// Turn alarm ON
 void IR_ON_OFF_CB(){
   Serial.println("IR_ON_OFF_CB");
   //activate alarm
@@ -169,9 +173,9 @@ void IR_ON_OFF_CB(){
   show_time = true;
 }
 
+// enter menus
 void IR_MODE_CB(){
   Serial.println("IR_MODE_CB");
-  // enter menu
   show_time = false;
   in_menu = true;
   
@@ -186,6 +190,7 @@ void IR_MUTE_CB(){
   Serial.println("IR_MUTE_CB");
 }
 
+// call the selected menu
 void IR_PLAY_CB(){
   Serial.println("IR_PLAY_CB");
   if (in_menu) {
@@ -193,6 +198,7 @@ void IR_PLAY_CB(){
   }
 }
 
+//previous menu
 void IR_REW_CB(){
   Serial.println("IR_REW_CB");
   if (in_menu) {
@@ -201,6 +207,7 @@ void IR_REW_CB(){
   updateMenu();
 }
 
+//next menu
 void IR_FF_CB(){
   Serial.println("IR_FF_CB");
   if (in_menu) {
@@ -209,6 +216,7 @@ void IR_FF_CB(){
   updateMenu();
 }
 
+//return from the menu to the home screen
 void IR_BACK_CB(){
   Serial.println("IR_BACK_CB");
   lcd.clear();
@@ -322,6 +330,8 @@ int keyToInt(int key_pressed){
   }
 }
 
+// waits until a digit is read from the IR receiver.
+// If back button is pressed, exits menu and returns 255;
 byte read_digit() {
   byte i = 0;
   for (i=0; i<1;) {
@@ -344,6 +354,7 @@ byte read_digit() {
   }
 }
 
+// reads two digits, behaviour is similar to read_digit()
 byte read_two_digits() {
   byte fst = read_digit();
   if (fst == 255) {
@@ -358,6 +369,7 @@ byte read_two_digits() {
   return 10 * fst + snd;
 }
 
+// menu for setting the current time
 void set_time_menu(){
   lcd.clear();
   lcd.print("ENTER TIME");
@@ -393,6 +405,7 @@ void set_time_menu(){
   IR_BACK_CB();
 }
 
+// menu for setting the current date
 void set_date_menu() {
   lcd.clear();
   lcd.print("ENTER DATE");
@@ -404,8 +417,6 @@ void set_date_menu() {
     lcd.print("ERROR");
     return;
   }
-  
-  //lcd.print(days);
   lcd.print(":");
   
   byte months = read_two_digits();
@@ -414,8 +425,6 @@ void set_date_menu() {
     lcd.print("ERROR");
     return;
   }
- 
-  //lcd.print(months);
   lcd.print(":");
   
   byte years = read_two_digits();
@@ -424,12 +433,13 @@ void set_date_menu() {
     lcd.print("ERROR");
     return;
   }
-  //lcd.print(years);
   
   setTime(hour(), minute(), second(), days, months, (years+2000));
   IR_BACK_CB();
 }
 
+//reads a 4 digit password from the IR receiver, if password is successfully
+//read, then it is returned, otherwise -1 is returned
 int read_password() {
   int password = 0;
   lcd.setCursor(0, 1);
@@ -443,17 +453,10 @@ int read_password() {
   }
   delay(500);
   return password;
-//  byte fst = read_two_digits();
-//  if (fst == 255) {
-//    return -1;
-//  }
-//  byte snd = read_two_digits();
-//  if (snd == 255) {
-//    return -1;
-//  }
-//  return fst * 100 + snd;
 }
 
+// function to set a new password
+// reads a password, and changes the password passed as a pointer
 boolean verify_set_password(int *password){
    int read_pssw = read_password();
    if (read_pssw == *password) {
@@ -474,6 +477,7 @@ boolean verify_set_password(int *password){
   }
 }
 
+//menu to change a password, choice determines if ENGINEER or USER password
 void set_password_menu(byte choice){
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -498,25 +502,6 @@ void set_password_menu(byte choice){
 }
 
 void set_user_password_menu() {
-//  lcd.clear();
-//  lcd.setCursor(0, 0);
-//  lcd.print("CURRENT PASSWORD");
-//  lcd.setCursor(0, 0);
-//  int password = read_password();
-//  if (password == user_password) {
-//    lcd.clear();
-//    lcd.print("NEW PASSWORD");
-//    int new_pass = read_password();
-//    user_password = new_pass;
-//    lcd.clear();
-//    lcd.print("SUCCESS");
-//    record_password_in_eeprom(user_password);
-//  }else {
-//    lcd.setCursor(0, 0);
-//    lcd.print("INCORRECT PASSWORD");
-//  }
-//  delay(1500);
-//  IR_BACK_CB();
   set_password_menu(0);
 }
 
@@ -524,8 +509,9 @@ void set_engineer_password_menu() {
   set_password_menu(1);
 }
 
-
+// set the zone type and the zone parameters
 void handle_set_zone(byte choice){
+  // choose the zone type
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("ENTER TYPE");
@@ -540,6 +526,8 @@ void handle_set_zone(byte choice){
     return;
   }  
   ALARM_TYPE at = byte2alarm_type(zone - 1);
+
+  //parameters for each zone type.
   lcd.clear();
   lcd.setCursor(0, 0);
   byte value = 0;
@@ -596,7 +584,9 @@ void handle_set_zone(byte choice){
   IR_BACK_CB();
 }
 
+//menu for changing zone types and their corresponding parameters
 void set_zone_menu() {
+  // check for engineer password
   lcd.clear();
   lcd.print("ENG PASSWORD");
   int password = read_password();
@@ -607,6 +597,8 @@ void set_zone_menu() {
     IR_BACK_CB();
     return;
   }
+
+  //select zone number
   lcd.clear();
   lcd.print("SELECT ZONE");
   lcd.setCursor(0, 1);
@@ -624,6 +616,7 @@ void set_zone_menu() {
     
 }
 
+//update the menu for the current menu option
 void updateMenu() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -632,9 +625,8 @@ void updateMenu() {
   lcd.print(menu_names[menu_index]);
 }
 
+// start the alarm when one of the zones is triggered
 void ring_the_alarm(ZONE *zone) {
-  //TODO: a function which waits for the user to entry the password
-  //TODO: record the alarm in EEPROM
   alarm_rang = true;
   show_time = false;
   digitalWrite(BUZZER, HIGH);
@@ -647,17 +639,21 @@ void ring_the_alarm(ZONE *zone) {
     password = read_password();
     Serial.print("password:");
     Serial.println(password);
-    // TODO: print incorrect password
   }while(password != user_password);
-  //if (password == user_password)
   digitalWrite(BUZZER, LOW);
   show_time = true;
   lcd.clear();
 }
+
+// check if entry exit zone condition is met: 
+// door opened, password is not entered in zone->value seconds
 void handle_entry_exit_zone(ZONE *zone){
+  // if zone is activated and exit time is elapsed
   if (zone->active && 
     alarm_active_time + zone->value < millis()/1000 ) {
     byte currentState = digitalRead(zone -> pin);
+
+    // if the zone is triggered
     if (currentState && !zone->state){
       int password;
       show_time = false;
@@ -675,7 +671,9 @@ void handle_entry_exit_zone(ZONE *zone){
           lcd.print("WRONG PASSWORD");
           delay(1000);
         }
+        //turn off is password is entered
       }while(user_password != password);
+      
       lcd.clear();
       digitalWrite(WARNING_LED, LOW);
       show_time = true; 
@@ -690,8 +688,10 @@ void handle_entry_exit_zone(ZONE *zone){
   }
 }
 
+// check if digital zone trigger condition is met: HIGH -> LOW or LOW -> HIGH
 void handle_digital_zone(ZONE *zone) {
   byte currentState = digitalRead(zone->pin);
+  // check if HIGH-> LOW or LOW->HIGH
   if (zone->value) {
     if (currentState && !zone->state){
       ring_the_alarm(zone);
@@ -705,6 +705,7 @@ void handle_digital_zone(ZONE *zone) {
   
 }
 
+// check if threshold on pin is higher then the value specified
 void handle_analog_zone(ZONE *zone) {
   
   int value = analogRead(zone->pin);
@@ -716,6 +717,7 @@ void handle_analog_zone(ZONE *zone) {
   zone->state = value;
 }
 
+// save the new offset of the events in the EEPROM
 void record_alarm_event_offset() {
   Serial.print("alarm offset written");
   Serial.println(alarm_event_offset);
@@ -723,6 +725,8 @@ void record_alarm_event_offset() {
   EEPROM.write(ALARM_EVENT_ADDR + 1, lowByte(alarm_event_offset));
 }
 
+
+//read the alarm event offset from the EEPROM
 void read_alarm_event_offset() {
   byte hi = EEPROM.read(ALARM_EVENT_ADDR + 0);
   byte lo = EEPROM.read(ALARM_EVENT_ADDR + 1);
@@ -731,6 +735,7 @@ void read_alarm_event_offset() {
   Serial.println(alarm_event_offset);
 }
 
+//write an alarm event to the EEPROM sibling function with read_event_from_eeprom();
 void record_event_in_eeprom(ZONE *zone){
   int offset = alarm_event_offset;
   time_t t = now();
@@ -753,6 +758,7 @@ void record_event_in_eeprom(ZONE *zone){
   record_alarm_event_offset();
 }
 
+//read an event from the EEPROM sibling function with record_event_in_eeprom();
 EVENT read_event_from_eeprom(int offset) {
   EVENT event;
   byte hifst = EEPROM.read(offset + 0);
@@ -769,6 +775,7 @@ EVENT read_event_from_eeprom(int offset) {
   return event;
 }
 
+//records a user/engineer password in the EEPROM, depending on choice
 void record_password_in_eeprom(int password, byte choice){
   int address = 0;
   if (choice){
@@ -783,6 +790,7 @@ void record_password_in_eeprom(int password, byte choice){
   EEPROM.write(address + 1, lopass);
 }
 
+// reads a saved user/engineer password from the EEPROM
 int read_password_from_eeprom(byte choice){
   int address = 0;
   if (choice){
@@ -796,13 +804,10 @@ int read_password_from_eeprom(byte choice){
   return word(hipass, lopass);
 }
 
+// saves all zones settings in the EEPROM
 void record_settings_in_eeprom() {
-  //TODO change to zone
-//  byte packed_alarm_types = 0;
   for(int i = 0; i < NR_ZONES; i++) {
       ZONE zone = zones[i];
-//    byte at = alarm_type2byte(zones[i].alarm_type); 
-//    packed_alarm_types |= at << (2 * i);
       byte at = alarm_type2byte(zone.alarm_type);
       byte hivalue = highByte(zone.value);
       byte lovalue = lowByte(zone.value);
@@ -817,12 +822,10 @@ void record_settings_in_eeprom() {
   }
 }
 
+// reads all zone settings from the eeprom
 void read_settings_from_eeprom() {
   //TODO change to zone
   for(int i = 0; i < NR_ZONES; i++) {
-//    byte packed_at = (packed_alarm_types & (B00000011 << (2 * i))) >> (2 * i);
-//    ALARM_TYPE at = byte2alarm_type(packed_at);
-//    zones[i].alarm_type = at;
       byte packed_at = EEPROM.read(ZONES_ADDR + 5*i + 0);
       byte hivalue = EEPROM.read(ZONES_ADDR + 5*i + 1);
       byte lovalue = EEPROM.read(ZONES_ADDR + 5*i + 2);
@@ -840,6 +843,7 @@ void read_settings_from_eeprom() {
   }
 }
 
+//prints the currently set zone types
 void lcd_print_alarm_types() {
   lcd.setCursor(0, 0);
   
@@ -861,6 +865,7 @@ void lcd_print_alarm_types() {
   }
 }
 
+//checks the zone type and calls the corresponding function
 void handle_alarm_zone(ZONE *zone){
   switch (zone->alarm_type) {
     case ENTRY_EXIT:
@@ -900,7 +905,7 @@ void lcd_time() {
   lcd_print_alarm_types();
 }
 
-
+// timer interrupt called every second
 ISR (TIMER1_COMPA_vect) {
   if (show_time)
     lcd_time();
@@ -947,8 +952,8 @@ void setup(){
   
   sei(); // enable global interrupts
 
+  //initilize values
   for(int i = 0; i < NR_ZONES; i++){
-    // TODO: READ FROM EEPROM PREVIOUS SETTINGS
     zones[i].pin = A0 + i;
     zones[i].value = 0;
     zones[i].state = 0;
@@ -962,7 +967,7 @@ void setup(){
   // Continuous alarm needs the value to be set the value to 0;
   zones[3].value = 0;
   
-  //record_settings_in_eeprom();
+  //read all cofiguration from the eeprom
   read_settings_from_eeprom();
   user_password = read_password_from_eeprom(0);
   engineer_password = read_password_from_eeprom(1);
@@ -970,15 +975,8 @@ void setup(){
 
   Serial.begin(9600); 
 
-  Serial.print("event offset: ");
-  Serial.println(alarm_event_offset);
-  
-  Serial.print("usr pass: ");
-  Serial.println(user_password);
-  Serial.print("eng pass: ");
-  Serial.println(engineer_password);
-
-    // TODO remove
+  // Proof of concept that reading an event from the EEPROM is working.
+  // this piece of code reads the last event from the EEPROM and sends it through the serial.
   EVENT eveent = read_event_from_eeprom(alarm_event_offset - EVENT_SIZE);
   Serial.print("time:");
   Serial.print(hour(eveent.t));
@@ -1001,11 +999,13 @@ void setup(){
   pinMode(RECV_PIN, INPUT);
 }
 
+// gotta love simple functions
 void loop() {
   if (irrecv.decode(&results)) {
     CBCaller(keyToInt(results.value));
     irrecv.resume();
   }
+  // gotta love for loops
   for (int i = 0; i < NR_ZONES; i++) {
     handle_alarm_zone(&zones[i]);
   }
