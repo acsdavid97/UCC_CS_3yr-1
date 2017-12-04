@@ -2,7 +2,7 @@
 
 //convert alarm type to byte
 byte alarm_type2byte(ALARM_TYPE at) {
-  switch(at){
+  switch (at) {
     case ENTRY_EXIT:
       return 0;
     case DIGITAL:
@@ -17,7 +17,7 @@ byte alarm_type2byte(ALARM_TYPE at) {
 
 // converts a byte to alarm type
 ALARM_TYPE byte2alarm_type(byte b) {
-  switch(b){
+  switch (b) {
     case 0:
       return ENTRY_EXIT;
     case 1:

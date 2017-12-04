@@ -16,7 +16,7 @@ typedef struct {
   boolean active;
   int time_triggered;
   boolean triggered;
-}ZONE;
+} ZONE;
 
 byte alarm_type2byte(ALARM_TYPE at);
 
