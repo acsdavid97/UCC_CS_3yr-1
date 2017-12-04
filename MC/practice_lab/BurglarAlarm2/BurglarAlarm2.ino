@@ -824,7 +824,6 @@ void record_settings_in_eeprom() {
 
 // reads all zone settings from the eeprom
 void read_settings_from_eeprom() {
-  //TODO change to zone
   for(int i = 0; i < NR_ZONES; i++) {
       byte packed_at = EEPROM.read(ZONES_ADDR + 5*i + 0);
       byte hivalue = EEPROM.read(ZONES_ADDR + 5*i + 1);
