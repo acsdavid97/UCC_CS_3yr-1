@@ -709,8 +709,6 @@ void handle_digital_zone(ZONE *zone) {
 void handle_analog_zone(ZONE *zone) {
   
   int value = analogRead(zone->pin);
-  // TODO: since the analog input may change from threshold -1 to threshold 
-  // we will have a RISING edge when the potentiometer is being turned down.
   if (value >= zone->value && zone->state < zone->value) {
     ring_the_alarm(zone);
   }
@@ -900,7 +898,6 @@ void lcd_time() {
   lcd_digits(day());
   lcd_digits(month());
   lcd_digits(year() % 100);
-  //TODO: remove it in the future
   lcd_print_alarm_types();
 }
 
